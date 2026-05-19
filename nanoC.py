@@ -1,4 +1,5 @@
 import lark
+
 grammaire = lark.Lark("""
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 OPBIN: /[+\-*\/<>]/
@@ -20,14 +21,6 @@ main: "main" "(" vars ")" "{" commande "return" "(" expression ")" ";" "}"
 
 compteur = iter(range(1000000000))
 
-def pp_expression(ast):
-    if ast.data in ("variable", "entier"):
-        return ast.children[0].value
-    eg = f"{pp_expression(ast.children[0])}"
-    op = ast.children[1].value
-    ed = f"{pp_expression(ast.children[2])}"
-    return f"{eg} {op} {ed}"
-
 def asm_expression(ast):
     if ast.data == "variable":
         return f"mov rax, [{ast.children[0].value}]\n"
@@ -41,24 +34,6 @@ def asm_expression(ast):
 {eg}pop rbx
 {opbin[op]} rax, rbx
 """
-
-def pp_commande(ast):
-    if ast.data == "assignation":
-        lhs = ast.children[0].value
-        rhs = pp_expression(ast.children[1])
-        return f"{lhs} = {rhs};"
-    if ast.data == "pass":
-        return "pass"
-    if ast.data == "print":
-        return f"print({pp_expression(ast.children[0])});"
-    if ast.data == "sequence":
-        cg = pp_commande(ast.children[0])
-        cd = pp_commande(ast.children[1])
-        return f"{cg}{cd}"
-    if ast.data in ("if", "while"):
-        cg = pp_expression(ast.children[0])
-        cd = pp_commande(ast.children[1])
-        return f"{ast.data}({cg}) {{{cd}}}"
 
 def asm_commande(ast):
     if ast.data == "assignation":
@@ -110,15 +85,6 @@ def asm_decls_vars(ast):
     return "\n".join(f"{ast.children[i].value}: dq 0"
                      for i in range(len(ast.children)))
 
-def pp_vars(ast):
-    return ", ".join( (v.value for v in ast.children))
-
-def pp_main(ast):
-    vs = pp_vars(ast.children[0])
-    cmd = pp_commande(ast.children[1])
-    ret = pp_expression(ast.children[2])
-    return f"main({vs})\n    {cmd}\n    return ({ret});"
-
 def asm_main(ast):
     decls = asm_decls_vars(ast.children[0])
     vs = asm_vars(ast.children[0])
@@ -130,10 +96,3 @@ def asm_main(ast):
     squelette = squelette.replace("COMMANDE", cmd)
     squelette = squelette.replace("RETURN", ret)
     return squelette
-
-if __name__ == "__main__":
-    src = open("source.c").read()
-    t = grammaire.parse(src)
-    # print(asm_main(t))
-    with open("resultat.asm", "w") as f:
-        f.write(asm_main(t))
