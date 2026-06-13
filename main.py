@@ -4,6 +4,7 @@ import prettyprinter
 if __name__ == "__main__":
     src = open("source.c").read()
     t = nanoC.grammaire.parse(src)
+    print(t.pretty())
     print("\n\033[107m    Source                                              \033[0m\n")
     print(src)
     print("\n\033[107m    Pretty Print                                        \033[0m\n")

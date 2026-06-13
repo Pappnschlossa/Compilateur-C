@@ -23,6 +23,8 @@ def pp_expression(ast):
         return ast.children[0].value
     if ast.data == "entier":
         return ast.children[0].value
+    if ast.data == "flottant":
+        return ast.children[0].value
     eg = f"{pp_expression(ast.children[0])}"
     op = ast.children[1].value
     ed = f"{pp_expression(ast.children[2])}"

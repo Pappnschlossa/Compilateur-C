@@ -1,6 +1,7 @@
-main(x,y) {
-    y = 1;
-    x = y * 1;
+main() {
+    x = 5.1;
+    x = 1;
+    x = x + 1.1;
     print(x);
     return (x);
 }
