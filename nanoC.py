@@ -1,29 +1,32 @@
-from pydub import AudioSegment
-from pydub.playback import play
 import lark
 INT = 0
 FLOAT = 1
+STRUCT = 2
 grammaire = lark.Lark("""
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 OPBIN: /[+\-*\/<>]/
+                      
+structs : ("typedef struct " IDENTIFIER "{" (definition";")* "};")* -> liste_struct
 vars : (IDENTIFIER ",")* IDENTIFIER -> liste_vars
      |                              -> liste_vide
 expression : IDENTIFIER -> variable
            | SIGNED_FLOAT -> flottant
            | SIGNED_NUMBER -> entier
            | expression OPBIN expression -> binaire
+definition : IDENTIFIER -> define
 commande : IDENTIFIER "=" expression ";" -> assignation
 | commande* commande -> sequence
 | "pass" -> pass
 | "print" "(" expression ")" ";" -> print
 | "if" "(" expression ")" "{" commande "}" -> if
 | "while" "(" expression ")" "{" commande "}" -> while
+statement: structs main
 main: "main" "(" vars ")" "{" commande "return" "(" expression ")" ";" "}"
 %import common.WS
 %import common.SIGNED_NUMBER
 %import common.SIGNED_FLOAT
 %ignore WS
-""", start="main")
+""", start="statement")
 
 compteur = iter(range(1000000000))
 
@@ -307,9 +310,21 @@ def collecter_flottants(ast, V = None):
         return collecter_flottants(ast.children[1], collecter_flottants(ast.children[0], V))
     return V
 
+
+def asm_struct(ast):
+    for i in range(len(ast.children)):
+        # ajouter dict avec tous les arguments de la struct
+        x = 1
+    return ""
+
+def asm_statement(ast):
+    structs = asm_struct(ast.children[0])
+    main = asm_main(ast.children[1])
+    return structs + main
+
+
 if __name__ == "__main__":
     src = open("source.c").read()
     t = grammaire.parse(src)
     with open("resultat.asm", "w") as f:
-        f.write(asm_main(t))
-    play(AudioSegment.from_wav("song.wav"))
+        f.write(asm_statement(t))
