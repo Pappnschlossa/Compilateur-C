@@ -13,3 +13,6 @@ if __name__ == "__main__":
     with open("resultat.asm", "w") as f:
         f.write(nanoC.asm_main(t))
     print("\n\033[107m    Retour                                              \033[0m\n")
+    with open("output.txt", "r") as f:
+        print(f.read())
+    print("\n\033[107m    Erreurs                                             \033[0m\n")
