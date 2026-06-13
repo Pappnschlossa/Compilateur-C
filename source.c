@@ -1,8 +1,7 @@
-main(x,y) {
-    while(x) {
-        x = x - 1 ;
-        y = y + 1 ;
-    }
-    print(y);
-    return (y);
+main() {
+    x = 5.1;
+    x = 1;
+    x = x + 1.1;
+    print(x);
+    return (x);
 }
