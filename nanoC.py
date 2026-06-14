@@ -4,6 +4,7 @@ import lark
 
 INT = 0
 FLOAT = 1
+STRUCT = 2
 
 OPBIN_INT = {"+" : "add", "-" : "sub", "*" : "imul"}
 OPBIN_FLOAT = {'+' : 'addsd', '-' : 'subsd', '*' : 'mulsd'}
@@ -11,12 +12,16 @@ OPBIN_FLOAT = {'+' : 'addsd', '-' : 'subsd', '*' : 'mulsd'}
 grammaire = lark.Lark("""
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 OPBIN: /[+\-*\/<>]/
+
+struct : ("typedef struct " IDENTIFIER "{" (definition ";")* "};") -> struct
+structs : struct* -> liste_struct
 vars : (IDENTIFIER ",")* IDENTIFIER -> liste_vars
      | -> liste_vide
 expression : IDENTIFIER -> variable
            | SIGNED_FLOAT -> flottant
            | SIGNED_NUMBER -> entier
            | expression OPBIN expression -> binaire
+definition : IDENTIFIER -> define
 commande : IDENTIFIER "=" expression ";" -> assignation
          | commande* commande -> sequence
          | "pass" -> pass
@@ -24,21 +29,23 @@ commande : IDENTIFIER "=" expression ";" -> assignation
          | "if" "(" expression ")" "{" commande "}" -> if
          | "while" "(" expression ")" "{" commande "}" -> while
 main : "main" "(" vars ")" "{" commande "return" "(" expression ")" ";" "}"
+statement : structs main
+
 %import common.WS
 %import common.SIGNED_NUMBER
 %import common.SIGNED_FLOAT
 %ignore WS
-""", start="main")
+""", start="statement")
 
 compteur = iter(range(1000000000))
 
-def transform_exp(ast):
+def transform_expression(ast):
     
     if ast.data == "entier" or ast.data == "flottant" or ast.data == "variable":
         return
     
-    transform_exp(ast.children[0])
-    transform_exp(ast.children[2])
+    transform_expression(ast.children[0])
+    transform_expression(ast.children[2])
     
     op = ast.children[1].value
 
@@ -101,11 +108,24 @@ def transform_exp(ast):
         ast.data = ast.children[0].data
         ast.children = ast.children[0].children
         return
+    
+def transform_commande(ast):
+    if ast.data == "assignation":
+        transform_expression(ast.children[1])
+    if ast.data == "print":
+        transform_expression(ast.children[0])
+    if ast.data == "sequence":
+        transform_commande(ast.children[0])
+        transform_commande(ast.children[1])
+    if ast.data == "if" or ast.data == "while":
+        transform_expression(ast.children[0])
+        transform_commande(ast.children[1])
+
+def transform_main(ast):
+    transform_commande(ast.children[1])
+    transform_expression(ast.children[2])
 
 def asm_expression(ast, available_int=["rax", "rcx", "rdx", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"], available_float=["xmm0", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]):
-
-    # optimisation de l'arbre
-    transform_exp(ast)
     
     if ast.data == "variable":
         i = next(compteur)
@@ -134,7 +154,7 @@ fin_{i}:
             return f"mov {available_int[0]}, [{ast.children[0].children[0].value}]\n{op} {available_int[0]}, {available_int[0]}\n"
     
     # il ne reste plus assez de place dans les registres pour continuer la récursion
-    if len(available_int) == 2:
+    if len(available_int) == 2 and len(available_float) == 2:
         i = next(compteur)
         eg = asm_expression(ast.children[0], available_int, available_float)
         ed = asm_expression(ast.children[2], available_int, available_float)
@@ -195,6 +215,120 @@ jmp fin_{i}
 
 fin_{i}:
 """
+    elif len(available_int) > 2 and len(available_float) == 2:
+        i = next(compteur)
+        eg = asm_expression(ast.children[0], available_int, available_float)
+        ed = asm_expression(ast.children[2], available_int[1:], available_float)
+        return f"""{eg}
+cmp rbx, {FLOAT}
+push rbx
+je gauche_est_flottant_{i}
+
+jmp fin_gauche_{i}
+
+gauche_est_flottant_{i}:
+sub rsp, 8
+movsd [rsp], {available_float[0]}
+
+fin_gauche_{i}:
+{ed}
+
+cmp rbx, {FLOAT}
+je droit_est_flottant_{i}
+
+pop rbx
+cmp rbx, {FLOAT}
+je gauche_flottant_droit_entier_{i}
+
+; les deux sont entiers:
+{int_op} {available_int[0]}, {available_int[1]}
+mov rbx, {INT}
+jmp fin_{i}
+
+gauche_flottant_droit_entier_{i}:
+movsd {available_float[0]}, [rsp]
+add rsp, 8
+cvtsi2sd {available_float[1]}, {available_int[1]}
+{float_op} {available_float[0]}, {available_float[1]}
+mov rbx, {FLOAT}
+jmp fin_{i}
+
+droit_est_flottant_{i}:
+pop rbx
+cmp rbx, {FLOAT}
+je les_deux_flottants_{i}
+
+; gauche entier droit flottant:
+cvtsi2sd {available_float[0]}, {available_int[0]}
+{float_op} {available_float[0]}, {available_float[1]}
+mov rbx, {FLOAT}
+jmp fin_{i}
+
+les_deux_flottants_{i}:
+movsd {available_float[1]}, [rsp]
+add rsp, 8
+{float_op} {available_float[0]}, {available_float[1]}
+mov rbx, {FLOAT}
+jmp fin_{i}
+
+fin_{i}:
+"""
+    elif len(available_int) == 2 and len(available_float) > 2:
+        i = next(compteur)
+        eg = asm_expression(ast.children[0], available_int, available_float)
+        ed = asm_expression(ast.children[2], available_int, available_float[1:])
+        return f"""{eg}
+cmp rbx, {FLOAT}
+push rbx
+je gauche_est_flottant_{i}
+
+push {available_int[0]}
+jmp fin_gauche_{i}
+
+gauche_est_flottant_{i}:
+
+fin_gauche_{i}:
+{ed}
+
+cmp rbx, {FLOAT}
+je droit_est_flottant_{i}
+
+pop rbx
+cmp rbx, {FLOAT}
+je gauche_flottant_droit_entier_{i}
+
+; les deux sont entiers:
+pop {available_int[1]}
+{int_op} {available_int[0]}, {available_int[1]}
+mov rbx, {INT}
+jmp fin_{i}
+
+gauche_flottant_droit_entier_{i}:
+cvtsi2sd {available_float[1]}, {available_int[0]}
+{float_op} {available_float[0]}, {available_float[1]}
+mov rbx, {FLOAT}
+jmp fin_{i}
+
+droit_est_flottant_{i}:
+pop rbx
+cmp rbx, {FLOAT}
+je les_deux_flottants_{i}
+
+; gauche entier droit flottant:
+pop {available_int[0]}
+cvtsi2sd {available_float[0]}, {available_int[0]}
+{float_op} {available_float[0]}, {available_float[1]}
+mov rbx, {FLOAT}
+jmp fin_{i}
+
+les_deux_flottants_{i}:
+{float_op} {available_float[0]}, {available_float[1]}
+mov rbx, {FLOAT}
+jmp fin_{i}
+
+fin_{i}:
+"""
+    #len(available_int) > 2 and len(available_float) > 2
     i = next(compteur)
     eg = f"{asm_expression(ast.children[0], available_int, available_float)}"
     op = ast.children[1].value
@@ -367,9 +501,20 @@ def collecter_flottants(ast, V = None):
         return collecter_flottants(ast.children[1], collecter_flottants(ast.children[0], V))
     return V
 
+def asm_struct(ast):
+    for i in range(len(ast.children)):
+        # ajouter dict avec tous les arguments de la struct
+        x = 1
+    return ""
+
+def asm_statement(ast):
+    transform_main(ast.children[1])
+    structs = asm_struct(ast.children[0])
+    main = asm_main(ast.children[1])
+    return f"{structs}{main}"
+
 if __name__ == "__main__":
     src = open("source.c").read()
     t = grammaire.parse(src)
     with open("resultat.asm", "w") as f:
-        f.write(asm_main(t))
-    # play(AudioSegment.from_wav("song.wav"))
+        f.write(asm_statement(t))
