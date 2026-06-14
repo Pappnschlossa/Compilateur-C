@@ -4,7 +4,7 @@ Projet de création d'un compilateur C utilisant Python et la bibliothèque `lar
 
 ## Utilisation
 
-Cloner le repo avec ``git clone https://github.com/Pappnschlossa/Compilateur-C.git`` et exécuter `script.sh`.
+Cloner le repo avec `git clone https://github.com/Pappnschlossa/Compilateur-C.git` et exécuter `script.sh`.
 
 ## Fonctionnalités implémentées
 
@@ -24,6 +24,27 @@ Thibaut s'est occupé du typage dynamique. Les fonctionnalités implémentées s
 Jolan a implémenté les structures.
 
 ## Utilisation du compilateur
+
+### Mode d'emploi
+Pour utiliser le compilateur, il suffit de modifier le fichier `source.c`. Le fichier `main.py` permet de générer un code assembleur correspondant aux lignes de code de ce fichier. La sortie est stockée dans `output.txt`.
+
+### Conventions
+Le compilateur suit la syntaxe usuelle du C en introduisant du typage dynamique :
+```c
+typedef struct Point{
+    x;
+    y;
+    z;
+};
+
+main() {
+    x = 0;
+    y = 1;
+    y = 1.3;
+    print(x + y);
+    return (x * y);
+}
+```
 
 ## Commentaires
 
