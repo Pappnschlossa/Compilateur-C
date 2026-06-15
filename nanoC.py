@@ -591,7 +591,7 @@ def struct_instanciate(structure, name): #instancie le pointeur de l'instance de
     return f"""
 {name} : dq 0
 {name}_type : dq 0
-mov [{name}_type], 2"""
+mov qword [{name}_type], 2"""
         
 
 def asm_struct_def(ast): #fixe le nombre d'arguments de chacune des structures et leurs noms à leur création
