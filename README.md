@@ -21,7 +21,17 @@ Thibaut s'est occupé du typage dynamique. Les fonctionnalités implémentées s
 - Reconnaissance du type d'une expression permettant de réaliser des calculs entre `int` et `float` ;
 
 ### Structures
-Jolan a implémenté les structures.
+Jolan a implémenté les structures. Les fonctionalités implémentées sont
+- définition de structures avec la syntaxe :
+typedef struct nomDeLaStructure{
+    arg1;
+    arg2;  
+}
+- instantiation avec le constructeur : structInstance = nomDeLaStructure();
+- assignations des valeurs des arguments avec la syntaxe du C : structInstance.arg1 = 1;
+- possibilité d'instancier des arguments d'une structure comme structures : structInstance.arg1 = nomDUneAutreStructure();
+
+- les structures sont définies comme un type séparé pour le typage dynamique et sont assignées comme des pointeurs vers le sectiondata, avec un offset pour stocker les arguments et leurs types.
 
 ## Utilisation du compilateur
 
