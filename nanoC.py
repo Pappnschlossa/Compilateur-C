@@ -12,6 +12,8 @@ OPBIN_FLOAT = {'+' : 'addsd', '-' : 'subsd', '*' : 'mulsd'}
 grammaire = lark.Lark("""
 IDENTIFIER: /[a-zA-Z_][a-zA-Z_0-9]*/
 OPBIN: /[+\-*\/<>]/
+STRUCTARG: ((IDENTIFIER".")* (IDENTIFIER"."IDENTIFIER))
+                    
 
 struct : ("typedef struct " IDENTIFIER "{" (definition ";")* "};") -> struct
 structs : struct* -> liste_struct
@@ -20,9 +22,13 @@ vars : (IDENTIFIER ",")* IDENTIFIER -> liste_vars
 expression : IDENTIFIER -> variable
            | SIGNED_FLOAT -> flottant
            | SIGNED_NUMBER -> entier
+           | STRUCTARG -> struct_arg
            | expression OPBIN expression -> binaire
 definition : IDENTIFIER -> define
-commande : IDENTIFIER "=" expression ";" -> assignation
+commande : IDENTIFIER "=" IDENTIFIER "()" ";" -> struct_assign      
+         | STRUCTARG "=" IDENTIFIER "()" ";" -> struct_assign         
+         | IDENTIFIER "=" expression ";" -> assignation
+         | STRUCTARG "=" expression ";" -> struct_arg_assignation      
          | commande* commande -> sequence
          | "pass" -> pass
          | "print" "(" expression ")" ";" -> print
@@ -38,12 +44,16 @@ statement : structs main
 """, start="statement")
 
 compteur = iter(range(1000000000))
+struct_dict = {} #type of each struct instance
+struct_dict_args = {} #arguments of a type of structs
+struct_list = []
 
 def transform_expression(ast):
     
-    if ast.data == "entier" or ast.data == "flottant" or ast.data == "variable":
+    if ast.data == "entier" or ast.data == "flottant" or ast.data == "variable" or ast.data == "struct_arg":
+        #print("rien ", ast)
         return
-    
+    #print(ast.pretty())
     transform_expression(ast.children[0])
     transform_expression(ast.children[2])
     
@@ -126,10 +136,12 @@ def transform_main(ast):
     transform_expression(ast.children[2])
 
 def asm_expression(ast, available_int=["rax", "rcx", "rdx", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"], available_float=["xmm0", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]):
-    
+    #print("expr ", ast)
     if ast.data == "variable":
+        #print("var ", ast)
         i = next(compteur)
-        return f"""mov rbx, [{ast.children[0].value}_type]
+        return f"""
+mov rbx, [{ast.children[0].value}_type]
 cmp rbx, {FLOAT}
 je variable_est_flottant_{i}
 mov {available_int[0]}, [{ast.children[0].value}]
@@ -138,12 +150,29 @@ variable_est_flottant_{i}:
 movsd {available_float[0]}, [{ast.children[0].value}]
 fin_{i}:
 """
+    if ast.data == "struct_arg":
+        st_ptr = parse_struct_arg(ast.children[0])
+        #st = ".".join(l[0:len(l)-1])
+        i = next(compteur)
+        return f"""
+mov rbx, [{st_ptr} + 8]
+cmp rbx, {FLOAT}
+je variable_est_flottant_{i}
+mov {available_int[0]}, [{st_ptr}]
+jmp fin_{i}
+variable_est_flottant_{i}:
+movsd {available_float[0]}, [{st_ptr}]
+fin_{i}:
+"""
+
     if ast.data == "entier":
         return f"mov rbx, {INT}\nmov {available_int[0]}, {ast.children[0].value}\n"
     
     if ast.data == "flottant":
         label = float_labels[ast.children[0].value]
+        #print(ast.children[0].value)
         return f"mov rbx, {FLOAT}\nmovsd {available_float[0]}, [{label}]\n"
+    
     
     int_op = OPBIN_INT[ast.children[1].value]
     float_op = OPBIN_FLOAT[ast.children[1].value]
@@ -382,7 +411,44 @@ jmp fin_{i}
 fin_{i}:
 """
 
+# def assign_struct_arg(ast, struct_instance):
+#     offset = 8 * struct_dict_args[struct_dict[struct_instance]].index(ast.children[0]) # offset validé
+#     print(struct_dict_args)
+#     if ast.data == "assignation":
+#         print("test float", ast.children[0].value)
+#         assigned_value = asm_expression(ast.children[1])
+#         return f"""
+#         {assigned_value}
+#         mov [{struct_instance}+{offset}], 
+#         """
+
+#dereference jusqu'à trouver la bonne struct et le bon offset
+def parse_struct_arg(arg):
+    l = arg.split(".")
+    if (len(l) == 2):
+        offset = 16 * struct_dict_args[struct_dict[l[0]]].index(l[1])
+        return f"{l[0]} + {offset}"
+    sName = ".".join(l[0:len(l)-1])
+    offset = 16 * struct_dict_args[struct_dict[sName]].index(l[-1])
+    return f"{sName} + {offset}"
+
+
 def asm_commande(ast):
+    if ast.data == "struct_arg_assignation":
+        lhs = ast.children[0].value
+        struct_ptr = parse_struct_arg(lhs)
+        rhs = asm_expression(ast.children[1])
+        i = next(compteur)
+        return f"""{rhs}
+mov [{struct_ptr} + 8], rbx
+cmp rbx, {FLOAT}
+je variable_est_flottant_{i}
+mov [{struct_ptr}], rax
+jmp fin_{i}
+variable_est_flottant_{i}:
+movsd [{struct_ptr}], xmm0
+fin_{i}:    
+"""
     if ast.data == "assignation":
         lhs = ast.children[0].value
         rhs = asm_expression(ast.children[1])
@@ -444,22 +510,25 @@ call atoi
 mov [{ast.children[i].value}], rax
 """ for i in range(len(ast.children)))
 
-def asm_decls_vars(ast, V, F):
+def asm_decls_vars(ast, V, F, S):
     params = {ast.children[i].value for i in range(len(ast.children))}
     V_local = V - params
-
+    structs = ""
+    for s in S:
+        structs += struct_instanciate(s[1], s[0])
     global float_labels
     float_labels = {v: f"__float_{i}" for i, v in enumerate(F)}
 
     if ast.data == "liste_vide": first_part = ""
     else: first_part = "\n".join(f"{ast.children[i].value}_type: dq 0\n{ast.children[i].value}: dq 0"
                      for i in range(len(ast.children)))
-    return first_part + "\n" + "\n".join(f"{v}_type: dq 0\n{v}: dq 0" for v in V_local) + "\n" + "\n".join(f"{float_labels[f]}: dq {f}" for f in F)
+    return structs + first_part + "\n" + "\n".join(f"{v}_type: dq 0\n{v}: dq 0" for v in V_local) + "\n" + "\n".join(f"{float_labels[f]}: dq {f}" for f in F)
 
 def asm_main(ast):
     V = collecter_vars(ast.children[1])
     F = collecter_flottants(ast.children[1]).union(collecter_flottants(ast.children[2]))
-    decls = asm_decls_vars(ast.children[0], V, F)
+    S = collecter_structs(ast.children[1])
+    decls = asm_decls_vars(ast.children[0], V, F, S)
     vs = asm_vars(ast.children[0])
     cmd = asm_commande(ast.children[1])
     ret = asm_expression(ast.children[2])
@@ -469,6 +538,20 @@ def asm_main(ast):
     squelette = squelette.replace("COMMANDE", cmd)
     squelette = squelette.replace("RETURN", ret)
     return squelette
+
+def collecter_structs(ast, V = None):
+    if V == None:
+        V = set()
+    if ast.data == "struct_assign":
+        #print(ast)
+        V.add((ast.children[0].value, ast.children[1].value))
+        return V
+    if ast.data == "sequence":
+        return collecter_structs(ast.children[1], collecter_structs(ast.children[0], V))
+    if ast.data in ("if", "while"):
+        return collecter_vars(ast.children[1], V)
+    return V
+    
 
 def collecter_vars(ast, V = None):
     if V == None:
@@ -488,7 +571,7 @@ def collecter_flottants(ast, V = None):
     if ast.data == "flottant":
         V.add(ast.children[0].value)
         return V
-    if ast.data == "assignation":
+    if ast.data == "assignation" or ast.data == "struct_arg_assignation":
         return collecter_flottants(ast.children[1], V)
     if ast.data == "print":
         return collecter_flottants(ast.children[0], V)
@@ -501,17 +584,28 @@ def collecter_flottants(ast, V = None):
         return collecter_flottants(ast.children[1], collecter_flottants(ast.children[0], V))
     return V
 
-def asm_struct(ast):
+
+def struct_instanciate(structure, name): #instancie le pointeur de l'instance de la struct à l'assignation
+    #print("instanciate ", name, structure)
+    struct_dict[name] = structure
+    return f"""
+{name} : dq 0
+{name}_type : dq 0
+mov [{name}_type], 2"""
+        
+
+def asm_struct_def(ast): #fixe le nombre d'arguments de chacune des structures et leurs noms à leur création
     for i in range(len(ast.children)):
-        # ajouter dict avec tous les arguments de la struct
-        x = 1
-    return ""
+        struct = ast.children[i]
+        struct_list.append(struct.children[0].value)
+        struct_dict_args[struct.children[0].value] = [struct.children[j+1].children[0].value for j in range(len(struct.children)-1)]
 
 def asm_statement(ast):
+    #print(ast)
     transform_main(ast.children[1])
-    structs = asm_struct(ast.children[0])
+    asm_struct_def(ast.children[0])
     main = asm_main(ast.children[1])
-    return f"{structs}{main}"
+    return f"{main}".replace("None", "")
 
 if __name__ == "__main__":
     src = open("source.c").read()

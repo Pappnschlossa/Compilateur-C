@@ -3,13 +3,18 @@ typedef struct testStruct{
     b;
 };
 
-typedef struct otherStruct{
+typedef struct tastaStrict{
+    x;
+    y;
 };
 
-main() {
-    x = 5.1;
-    x = 1;
-    x = 1.1 + 0.8;
-    print(x);
-    return (x);
+main(){
+    s = testStruct();
+    s.a = 1;
+    x = s.a + 2;
+    s.b = tastaStrict();
+    s.b.x = 1.1;
+    z = 42;
+    print(s.b.x + z);
+    return(0);
 }

@@ -25,6 +25,8 @@ def pp_expression(ast):
         return ast.children[0].value
     if ast.data == "flottant":
         return ast.children[0].value
+    if ast.data == "struct_arg":
+        return ast.children[0].value
     eg = f"{pp_expression(ast.children[0])}"
     op = ast.children[1].value
     ed = f"{pp_expression(ast.children[2])}"
@@ -36,6 +38,13 @@ def pp_commande(ast, indent=1):
         lhs = ast.children[0].value
         rhs = pp_expression(ast.children[1])
         return f"{tab}{lhs} = {rhs}{ENDL}"
+    if ast.data == "struct_assign":
+        lhs = ast.children[0].value
+        struc = ast.children[1].value
+        rhs = "".join(pp_commande(c) for c in ast.children[2].children)
+        print("pretty test")
+        print(rhs)
+        return f"{tab}{lhs} = {struc}({rhs}){ENDL}"
     if ast.data == "pass":
         return f"{tab}pass{ENDL}"
     if ast.data == "print":
